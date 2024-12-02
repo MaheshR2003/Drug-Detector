@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drug Detector</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-gradient-to-r from-blue-50 to-blue-100 min-h-screen flex items-center justify-center">
+    <div class="container max-w-4xl mx-auto p-6">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">Drug Detector</h1>
+            <p class="text-gray-700">Upload an image of a medicine to get detailed information and translation.</p>
+        </div>
+
+        <!-- Upload and Extract Section -->
+        <div class="bg-white shadow-lg rounded-lg p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Step 1: Upload Image</h2>
+            <div class="flex flex-col items-center relative">
+                <label for="imageInput" class="bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded cursor-pointer">
+                    Upload Image
+                </label>
+                <input type="file" id="imageInput" accept="image/*" class="hidden">
+                <!-- Loader for Image Processing -->
+                <div id="imageLoader" class="absolute top-1/2 right-10 transform -translate-y-1/2 hidden">
+                    <div class="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            </div>
+            <textarea id="outputTextarea" class="w-full h-40 mt-6 p-3 border rounded bg-gray-50 text-gray-800" placeholder="Extracted text will appear here..." readonly></textarea>
+        </div>
+
+        <!-- Translation and Speak Section -->
+        <div class="bg-white shadow-lg rounded-lg p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Step 2: Translate and Speak</h2>
+            <textarea id="outputTextarea2" class="w-full h-40 mb-4 p-3 border rounded bg-gray-50 text-gray-800" placeholder="Translated text will appear here..." readonly></textarea>
+            <div class="flex flex-col md:flex-row items-center md:space-x-4 relative">
+                <select id="toSelect" class="w-full md:w-auto mb-4 md:mb-0 p-2 border rounded">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="kn">Kannada</option>
+                    <option value="ta">Tamil</option>
+                    <option value="te">Telugu</option>
+                </select>
+                <button id="translateButton" class="bg-green-500 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded w-full md:w-auto">
+                    Translate
+                </button>
+                <button id="speakButton" class="bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded w-full md:w-auto">
+                    Speak
+                </button>
+                <!-- Loader for Translation -->
+                <div id="translateLoader" class="absolute top-1/2 right-10 transform -translate-y-1/2 hidden">
+                    <div class="w-6 h-6 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script type="module">
+        import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+        const imageInput = document.getElementById('imageInput');
+        const outputTextarea = document.getElementById('outputTextarea');
+        const translateButton = document.getElementById('translateButton');
+        const speakButton = document.getElementById('speakButton');
+        const toSelect = document.getElementById('toSelect');
+        const outputTextarea2 = document.getElementById('outputTextarea2');
+        const imageLoader = document.getElementById('imageLoader');
+        const translateLoader = document.getElementById('translateLoader');
+
+        let extractedText = "";
+        let API_KEY = "AIzaSyBIVCHQ1K6WF8UZhQUP4w4m0AbL_ZZ56RY";
+        const genAI = new GoogleGenerativeAI(API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        // OCR Extraction
+        imageInput.addEventListener('change', async () => {
+            const file = imageInput.files[0];
+            if (file) {
+                imageLoader.classList.remove('hidden');
+                const reader = new FileReader();
+                reader.onload = async () => {
+                    const img = new Image();
+                    img.src = reader.result;
+                    img.onload = async () => {
+                        try {
+                            const { data: { text } } = await Tesseract.recognize(img);
+                            extractedText = text.trim();
+                            if (extractedText) {
+                                const aiResponse = await fetchAIResponse(extractedText);
+                                outputTextarea.value = aiResponse || "Error generating response.";
+                            } else {
+                                outputTextarea.value = "No text detected. Please upload a clear image.";
+                            }
+                        } catch (error) {
+                            console.error('OCR Error:', error);
+                            outputTextarea.value = "Error processing image. Try again.";
+                        } finally {
+                            imageLoader.classList.add('hidden');
+                        }
+                    };
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Fetch AI Response
+        async function fetchAIResponse(inputText) {
+            const prompt = `${inputText} - Give me the primary use of this tablet. If not a tablet, ask to re-upload the file.`;
+            try {
+                const result = await model.generateContent(prompt);
+                const responseText = await result.response.text();
+                return responseText;
+            } catch (error) {
+                console.error("AI Response Error:", error);
+                return "Unable to generate response.";
+            }
+        }
+
+        // Translation Functionality
+        translateButton.addEventListener('click', async () => {
+            const fromLang = "en";
+            const toLang = toSelect.value;
+
+            if (!outputTextarea.value) {
+                outputTextarea2.value = "No text to translate. Please upload an image first.";
+                return;
+            }
+
+            if (toLang === "en") {
+                outputTextarea2.value = outputTextarea.value;
+                return;
+            }
+
+            translateLoader.classList.remove('hidden');
+            try {
+                const API_URL = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(outputTextarea.value)}&langpair=${fromLang}|${toLang}`;
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                if (data.responseData && data.responseData.translatedText) {
+                    outputTextarea2.value = data.responseData.translatedText;
+                } else {
+                    outputTextarea2.value = "Translation failed. Please try again.";
+                }
+            } catch (error) {
+                console.error('Translation Error:', error);
+                outputTextarea2.value = "Error occurred while translating. Try again.";
+            } finally {
+                translateLoader.classList.add('hidden');
+            }
+        });
+
+        let voices = [];
+        window.speechSynthesis.onvoiceschanged = function() {
+            voices = window.speechSynthesis.getVoices();
+        };
+
+        // ... other JavaScript code
+
+speakButton.addEventListener('click', () => {
+    const textToSpeak = outputTextarea2.value;
+    const selectedLang = toSelect.value;
+
+    if (textToSpeak) {
+        const speech = new SpeechSynthesisUtterance(textToSpeak);
+
+        // Ensure voices are available before attempting to speak
+        if (voices.length === 0) {
+            console.log('Voices are not available yet.');
+            return;
+        }
+
+        // Select the voice based on the language
+        let selectedVoice = null;
+
+        switch (selectedLang) {
+            case 'hi':
+                selectedVoice = voices.find(voice => voice.lang === 'hi-IN');
+                break;
+            case 'kn':
+                selectedVoice = voices.find(voice => voice.lang === 'hi-IN');
+                break;
+            case 'ta':
+                selectedVoice = voices.find(voice => voice.lang === 'hi-IN');
+                break;
+            case 'te':
+                selectedVoice = voices.find(voice => voice.lang === 'hi-IN');
+                break;
+            case 'en':
+            default:
+                selectedVoice = voices.find(voice => voice.lang === 'en-US');
+                break;
+        }
+
+        if (selectedVoice) {
+            speech.lang = selectedLang;
+            speech.voice = selectedVoice;
+            window.speechSynthesis.speak(speech);
+        } else {
+            console.log(`Voice for ${selectedLang} not found.`);
+            // Consider using a fallback language or text-to-speech API
+        }
+    } else {
+        alert("Please translate text first.");
+    }
+});
+</script>
+</body>
+
+</html>
+
+
+
+
+
+
+
+
+
+
+
